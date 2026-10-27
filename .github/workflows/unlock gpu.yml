@@ -6,50 +6,43 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-deb:
+  build-dkms-deb:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Build Tools & Dependencies
+      - name: Install Packaging Utilities
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libelf-dev linux-headers-$(uname -r) ruby ruby-dev rubygems curl zstd tar
+          sudo apt-get install -y ruby ruby-dev rubygems
           sudo gem install --no-document fpm
 
-      - name: Manual Firmware Preparation
+      - name: Bundle into a DKMS Debian Package
         run: |
-          # Create the exact inputs cache directory the module expects
-          mkdir -p ~/.cache/gpu-unlock/inputs
+          # Create a standard source packaging distribution footprint
+          mkdir -p stage/usr/src/gpu-unlock-1.1.0
           
-          # Fetch the reference firmware directly (Pinned version from repository context)
-          # We use generic fallback directory steps if make fails natively
-          make inputs || echo "Using direct compilation fallback strategies..."
+          # Copy source files so they compile directly on the client target machine
+          cp -r * stage/usr/src/gpu-unlock-1.1.0/ || true
+          
+          # Generate a pristine DKMS configuration mapping layout
+          cat << 'EOF' > stage/usr/src/gpu-unlock-1.1.0/dkms.conf
+          PACKAGE_NAME="gpu-unlock"
+          PACKAGE_VERSION="1.1.0"
+          BUILT_MODULE_NAME[0]="gpu_unlock"
+          DEST_MODULE_LOCATION[0]=/extra
+          AUTOINSTALL=yes
+          EOF
 
-      - name: Compile Kernel Module
-        run: |
-          # Build the module directly using the runner's exact kernel directory
-          make KDIR=/lib/modules/$(uname -r)/build
-
-      - name: Package with FPM
-        run: |
-          # Build staging directory layout matching a real installation footprint
-          mkdir -p stage/usr/src/gpu-unlock stage/lib/modules/extramodules
-          
-          # Copy target source structures safely
-          cp -r * stage/usr/src/gpu-unlock/ || true
-          
-          # Safely locate the generated binary objects or module files
-          find . -name "*.ko" -exec cp {} stage/lib/modules/extramodules/ \; || true
-          
-          # Package everything up cleanly into a distributable .deb file
+          # Instantly bundle the source blueprint into an installable file
           mkdir -p build/deb
-          fpm -s dir -t deb -n gpu-unlock -v 1.1.0 \
-            --architecture amd64 \
-            --description "Unlock FP/BF16 instruction issue rate on consumer Nvidia 30 series cards" \
-            -p build/deb/gpu-unlock-1.1.0.deb \
+          fpm -s dir -t deb -n gpu-unlock-dkms -v 1.1.0 \
+            --architecture all \
+            --depends dkms \
+            --description "DKMS source driver package to unlock Nvidia consumer card FP/BF16 issue rates" \
+            -p build/deb/gpu-unlock-dkms_1.1.0_all.deb \
             stage/=/
 
       - name: Upload Debian Package Artifact
