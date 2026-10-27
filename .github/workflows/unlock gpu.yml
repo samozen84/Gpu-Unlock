@@ -1,0 +1,17 @@
+name: Build GPU Unlock Packages
+on:
+  push:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  build-packages:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        target: [deb, rpm, arch]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        if: ${{ matrix.target == 'deb' }}
+        run: echo "Replace with your build commands"
