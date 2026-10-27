@@ -13,24 +13,38 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install System Packaging Tools & Toolchains
+      - name: Install Build Tools & Kernel Headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential debhelper devscripts dpkg-dev libelf-dev linux-headers-generic equivs
+          sudo apt-get install -y build-essential libelf-dev linux-headers-$(uname -r) ruby ruby-dev rubygems
+          sudo gem install --no-document fpm
 
-      - name: Automatically Resolve and Install Repository Build Deps
+      - name: Download Remote Firmware Inputs
         run: |
-          # Parse debian/control file and generate a dummy package satisfying its dependencies
-          sudo mk-build-deps -i -r -t "apt-get -o Debug::pkgProblemResolver=yes --no-install-recommends -y" debian/control
+          # Fetch the external NVIDIA components required by the project
+          make inputs
 
-      - name: Run Dedicated Debian Build
+      - name: Compile Kernel Module Binaries
         run: |
-          # Build the binaries ignoring any unsigned changes signature alerts (-us -uc)
-          dpkg-buildpackage -us -uc -b
+          # Build raw kernel drivers natively
+          make KDIR=/lib/modules/$(uname -r)/build
+
+      - name: Bundle into Debian Package File
+        run: |
+          # Create a mock installation structure
+          mkdir -p stage/usr/src/gpu-unlockstage/lib/modules/extramodules
           
-          # Consolidate output binary artifacts
+          # Stage tracking configuration files
+          cp -r * stage/usr/src/gpu-unlock/ || true
+          cp firmware/gpu_unlock.bin stage/lib/modules/extramodules/ || true
+          
+          # Generate clean install package manually via FPM
           mkdir -p build/deb
-          mv ../gpu-unlock_*.deb build/deb/ 2>/dev/null || mv ../gpu-unlock-*.deb build/deb/ 2>/dev/null
+          fpm -s dir -t deb -n gpu-unlock -v 1.1.0 \
+            --architecture amd64 \
+            --description "Unlock FP/BF16 instruction issue rate on consumer Nvidia 30 series cards" \
+            -p build/deb/gpu-unlock-1.1.0.deb \
+            stage/=/
 
       - name: Upload Debian Package Artifact
         uses: actions/upload-artifact@v4
