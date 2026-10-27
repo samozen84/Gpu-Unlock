@@ -13,13 +13,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Install Debian/Ubuntu Packaging Tools
+      - name: Install System Packaging Tools & Kernel Headers
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential debhelper devscripts dpkg-dev libelf-dev
+          sudo apt-get install -y build-essential debhelper devscripts dpkg-dev libelf-dev linux-headers-generic
 
-      - name: Run Debian Build
-        run: make deb
+      - name: Run Dedicated Debian Build
+        run: |
+          # Use explicit packaging instruction bypassing local distro detection scripts
+          dpkg-buildpackage -us -uc -b
+          
+          # Move generated files to expected artifact target location
+          mkdir -p build/deb
+          mv ../gpu-unlock_*.deb build/deb/ 2>/dev/null || mv ../gpu-unlock-*.deb build/deb/ 2>/dev/null
 
       - name: Upload Debian Package Artifact
         uses: actions/upload-artifact@v4
